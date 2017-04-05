@@ -666,6 +666,38 @@ describe('mocha-runner/mocha-adapter', () => {
                 .then(() => hookBreaker.suite.tests[0].fn())
                 .catch((error) => assert.equal(error.message, 'some-async-error'));
         });
+
+        it('should not execute original beforeEach hook functionality if before hook failed', () => {
+            const hookBreaker = mkBeforeAllHookBreaker_(() => {
+                throw new Error('some-error');
+            });
+
+            const hookSpy = sinon.spy();
+            const beforeEachHook = mkRunnableStub_({parent: hookBreaker.suite, fn: hookSpy});
+
+            hookBreaker.suite.beforeEach = [beforeEachHook];
+            MochaStub.prototype.suite.emit('beforeEach', beforeEachHook);
+
+            return hookBreaker.suite.beforeAll[0].fn()
+                .then(() => hookBreaker.suite.beforeEach[0].fn())
+                .catch(() => assert.notCalled(hookSpy));
+        });
+
+        it('should fail beforeEach hook with error from before hook', () => {
+            const hookBreaker = mkBeforeAllHookBreaker_(() => {
+                throw new Error('some-before-hook-error');
+            });
+
+            const hookSpy = sinon.spy();
+            const beforeEachHook = mkRunnableStub_({parent: hookBreaker.suite, fn: hookSpy});
+
+            hookBreaker.suite.beforeEach = [beforeEachHook];
+            MochaStub.prototype.suite.emit('beforeEach', beforeEachHook);
+
+            return hookBreaker.suite.beforeAll[0].fn()
+                .then(() => hookBreaker.suite.beforeEach[0].fn())
+                .catch((error) => assert.equal(error.message, 'some-before-hook-error'));
+        });
     });
 
     describe('"before each" hook error handling', () => {
