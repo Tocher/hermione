@@ -639,7 +639,7 @@ describe('mocha-runner/mocha-adapter', () => {
 
         beforeEach(() => mkMochaAdapter_());
 
-        it('should not launch suite original test if before hook failed', () => {
+        it('should not launch suite original test if "before" hook failed', () => {
             const hookBreaker = mkBeforeAllHookBreaker_(() => {
                 throw new Error('some-error');
             });
@@ -649,7 +649,7 @@ describe('mocha-runner/mocha-adapter', () => {
                 .catch(() => assert.notCalled(hookBreaker.originalTest));
         });
 
-        it('should fail suite tests with error thrown from before hook', () => {
+        it('should fail suite tests with error thrown from "before" hook', () => {
             const hookBreaker = mkBeforeAllHookBreaker_(() => {
                 throw new Error('some-error');
             });
@@ -659,7 +659,7 @@ describe('mocha-runner/mocha-adapter', () => {
                 .catch((error) => assert.equal(error.message, 'some-error'));
         });
 
-        it('should handle async hook errors', () => {
+        it('should handle async "before hook" errors', () => {
             const hookBreaker = mkBeforeAllHookBreaker_(() => q.reject(new Error('some-async-error')));
 
             return hookBreaker.suite.beforeAll[0].fn()
@@ -667,7 +667,7 @@ describe('mocha-runner/mocha-adapter', () => {
                 .catch((error) => assert.equal(error.message, 'some-async-error'));
         });
 
-        it('should not execute original beforeEach hook functionality if before hook failed', () => {
+        it('should not execute original "before each" hook functionality if "before" hook failed', () => {
             const hookBreaker = mkBeforeAllHookBreaker_(() => {
                 throw new Error('some-error');
             });
@@ -683,7 +683,7 @@ describe('mocha-runner/mocha-adapter', () => {
                 .catch(() => assert.notCalled(hookSpy));
         });
 
-        it('should fail beforeEach hook with error from before hook', () => {
+        it('should fail "before each" hook with error from before hook', () => {
             const hookBreaker = mkBeforeAllHookBreaker_(() => {
                 throw new Error('some-before-hook-error');
             });
@@ -722,7 +722,7 @@ describe('mocha-runner/mocha-adapter', () => {
 
         beforeEach(() => mkMochaAdapter_());
 
-        it('should not launch suite original test if before hook failed', () => {
+        it('should not execute original suite test if "before each" hook failed', () => {
             const hookBreaker = mkBeforeEachHookBreaker_(() => {
                 throw new Error('some-error');
             });
@@ -730,6 +730,14 @@ describe('mocha-runner/mocha-adapter', () => {
             return hookBreaker.suite.beforeEach[0].fn()
                 .then(() => hookBreaker.suite.tests[0].fn())
                 .catch(() => assert.notCalled(hookBreaker.originalTest));
+        });
+
+        it('should execute original suite test if "before each hook was executed successfully"', () => {
+            const hookBreaker = mkBeforeEachHookBreaker_(_.noop);
+
+            return hookBreaker.suite.beforeEach[0].fn()
+                .then(() => hookBreaker.suite.tests[0].fn())
+                .catch(() => assert.called(hookBreaker.originalTest));
         });
 
         it('should fail test with error from "before each" hook', () => {
@@ -742,12 +750,47 @@ describe('mocha-runner/mocha-adapter', () => {
                 .catch((error) => assert.equal(error.message, 'some-error'));
         });
 
-        it('should handle async hook errors', () => {
+        it('should handle async "before each" hook errors', () => {
             const hookBreaker = mkBeforeEachHookBreaker_(() => q.reject(new Error('some-async-error')));
 
             return hookBreaker.suite.beforeEach[0].fn()
                 .then(() => hookBreaker.suite.tests[0].fn())
                 .catch((error) => assert.equal(error.message, 'some-async-error'));
+        });
+
+        it('should run another tests in suite after "before each" hook failed', () => {
+            const testFn1 = sinon.spy();
+            const testFn2 = sinon.spy();
+
+            const suite = mkSuiteStub_();
+
+            const beforeEachHookStub = sandbox.stub()
+                .onFirstCall().throws(new Error('some-error'))
+                .onSecondCall().returns(true);
+
+            suite.tests = [
+                mkRunnableStub_({parent: suite, fn: testFn1}),
+                mkRunnableStub_({parent: suite, fn: testFn2})
+            ];
+
+            suite.beforeEach = [
+                mkRunnableStub_({parent: suite, fn: beforeEachHookStub, ctx: {currentTest: suite.tests[0]}}),
+                mkRunnableStub_({parent: suite, fn: beforeEachHookStub, ctx: {currentTest: suite.tests[1]}})
+            ];
+
+            MochaStub.prototype.suite.emit('beforeEach', suite.beforeEach[0]);
+            MochaStub.prototype.suite.emit('beforeEach', suite.beforeEach[1]);
+            MochaStub.prototype.suite.emit('test', suite.tests[0]);
+            MochaStub.prototype.suite.emit('test', suite.tests[1]);
+
+            return suite.beforeEach[0].fn()
+                .then(() => suite.tests[0].fn())
+                .catch(() => suite.beforeEach[0].fn())
+                .then(() => suite.tests[1].fn())
+                .then(() => {
+                    assert.notCalled(testFn1);
+                    assert.called(testFn2);
+                });
         });
     });
 });
